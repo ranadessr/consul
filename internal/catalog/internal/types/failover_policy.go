@@ -27,7 +27,12 @@ var (
 	}
 
 	FailoverPolicyType = FailoverPolicyV1Alpha1Type
+
+	ValidateFailoverPolicy = resource.DecodeAndValidate[*pbcatalog.FailoverPolicy](validateFailoverPolicy)
+	MutateFailoverPolicy   = resource.DecodeAndMutate[*pbcatalog.FailoverPolicy](mutateFailoverPolicy)
 )
+
+type DecodedFailoverPolicy = resource.DecodedResource[*pbcatalog.FailoverPolicy]
 
 func RegisterFailoverPolicy(r resource.Registry) {
 	r.Register(resource.Registration{
@@ -38,58 +43,42 @@ func RegisterFailoverPolicy(r resource.Registry) {
 	})
 }
 
-func MutateFailoverPolicy(res *pbresource.Resource) error {
-	var failover pbcatalog.FailoverPolicy
-
-	if err := res.Data.UnmarshalTo(&failover); err != nil {
-		return resource.NewErrDataParse(&failover, err)
-	}
-
+func mutateFailoverPolicy(dec *DecodedFailoverPolicy) (bool, error) {
 	changed := false
 
 	// Handle eliding empty configs.
-	if failover.Config != nil && failover.Config.IsEmpty() {
-		failover.Config = nil
+	if dec.Data.Config != nil && dec.Data.Config.IsEmpty() {
+		dec.Data.Config = nil
 		changed = true
 	}
-	for port, pc := range failover.PortConfigs {
+	for port, pc := range dec.Data.PortConfigs {
 		if pc.IsEmpty() {
-			delete(failover.PortConfigs, port)
+			delete(dec.Data.PortConfigs, port)
 			changed = true
 		}
 	}
-	if len(failover.PortConfigs) == 0 {
-		failover.PortConfigs = nil
+	if len(dec.Data.PortConfigs) == 0 {
+		dec.Data.PortConfigs = nil
 		changed = true
 	}
 
 	// TODO(rb): normalize dest ref tenancies
 
-	if !changed {
-		return nil
-	}
-
-	return res.Data.MarshalFrom(&failover)
+	return changed, nil
 }
 
-func ValidateFailoverPolicy(res *pbresource.Resource) error {
-	var failover pbcatalog.FailoverPolicy
-
-	if err := res.Data.UnmarshalTo(&failover); err != nil {
-		return resource.NewErrDataParse(&failover, err)
-	}
-
+func validateFailoverPolicy(dec *DecodedFailoverPolicy) error {
 	var merr error
 
-	if failover.Config == nil && len(failover.PortConfigs) == 0 {
+	if dec.Data.Config == nil && len(dec.Data.PortConfigs) == 0 {
 		merr = multierror.Append(merr, resource.ErrInvalidField{
 			Name:    "config",
 			Wrapped: fmt.Errorf("at least one of config or port_configs must be set"),
 		})
 	}
 
-	if failover.Config != nil {
-		for _, err := range validateFailoverConfig(failover.Config, false) {
+	if dec.Data.Config != nil {
+		for _, err := range validateFailoverConfig(dec.Data.Config, false) {
 			merr = multierror.Append(merr, resource.ErrInvalidField{
 				Name:    "config",
 				Wrapped: err,
@@ -97,7 +86,7 @@ func ValidateFailoverPolicy(res *pbresource.Resource) error {
 		}
 	}
 
-	for portName, pc := range failover.PortConfigs {
+	for portName, pc := range dec.Data.PortConfigs {
 		if portNameErr := validatePortName(portName); portNameErr != nil {
 			merr = multierror.Append(merr, resource.ErrInvalidMapKey{
 				Map:     "port_configs",

@@ -22,7 +22,11 @@ var (
 	}
 
 	HealthStatusType = HealthStatusV1Alpha1Type
+
+	ValidateHealthStatus = resource.DecodeAndValidate[*pbcatalog.HealthStatus](validateHealthStatus)
 )
+
+type DecodedHealthStatus = resource.DecodedResource[*pbcatalog.HealthStatus]
 
 func RegisterHealthStatus(r resource.Registry) {
 	r.Register(resource.Registration{
@@ -32,26 +36,20 @@ func RegisterHealthStatus(r resource.Registry) {
 	})
 }
 
-func ValidateHealthStatus(res *pbresource.Resource) error {
-	var hs pbcatalog.HealthStatus
-
-	if err := res.Data.UnmarshalTo(&hs); err != nil {
-		return resource.NewErrDataParse(&hs, err)
-	}
-
+func validateHealthStatus(dec *DecodedHealthStatus) error {
 	var err error
 
 	// Should we allow empty types? I think for now it will be safest to require
 	// the type field is set and we can relax this restriction in the future
 	// if we deem it desirable.
-	if hs.Type == "" {
+	if dec.Data.Type == "" {
 		err = multierror.Append(err, resource.ErrInvalidField{
 			Name:    "type",
 			Wrapped: resource.ErrMissing,
 		})
 	}
 
-	switch hs.Status {
+	switch dec.Data.Status {
 	case pbcatalog.Health_HEALTH_PASSING,
 		pbcatalog.Health_HEALTH_WARNING,
 		pbcatalog.Health_HEALTH_CRITICAL,
@@ -67,13 +65,13 @@ func ValidateHealthStatus(res *pbresource.Resource) error {
 	// owner is currently the resource that this HealthStatus applies to. If we
 	// change this to be a parent reference within the HealthStatus.Data then
 	// we could allow for other owners.
-	if res.Owner == nil {
+	if dec.Resource.Owner == nil {
 		err = multierror.Append(err, resource.ErrInvalidField{
 			Name:    "owner",
 			Wrapped: resource.ErrMissing,
 		})
-	} else if !resource.EqualType(res.Owner.Type, WorkloadType) && !resource.EqualType(res.Owner.Type, NodeType) {
-		err = multierror.Append(err, resource.ErrOwnerTypeInvalid{ResourceType: res.Id.Type, OwnerType: res.Owner.Type})
+	} else if !resource.EqualType(dec.Resource.Owner.Type, WorkloadType) && !resource.EqualType(dec.Resource.Owner.Type, NodeType) {
+		err = multierror.Append(err, resource.ErrOwnerTypeInvalid{ResourceType: dec.Resource.Id.Type, OwnerType: dec.Resource.Owner.Type})
 	}
 
 	return err

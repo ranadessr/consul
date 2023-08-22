@@ -22,7 +22,11 @@ var (
 	}
 
 	VirtualIPsType = VirtualIPsV1Alpha1Type
+
+	ValidateVirtualIPs = resource.DecodeAndValidate[*pbcatalog.VirtualIPs](validateVirtualIPs)
 )
+
+type DecodedVirtualIPs = resource.DecodedResource[*pbcatalog.VirtualIPs]
 
 func RegisterVirtualIPs(r resource.Registry) {
 	r.Register(resource.Registration{
@@ -32,15 +36,9 @@ func RegisterVirtualIPs(r resource.Registry) {
 	})
 }
 
-func ValidateVirtualIPs(res *pbresource.Resource) error {
-	var vips pbcatalog.VirtualIPs
-
-	if err := res.Data.UnmarshalTo(&vips); err != nil {
-		return resource.NewErrDataParse(&vips, err)
-	}
-
+func validateVirtualIPs(dec *DecodedVirtualIPs) error {
 	var err error
-	for idx, ip := range vips.Ips {
+	for idx, ip := range dec.Data.Ips {
 		if vipErr := validateIPAddress(ip.Address); vipErr != nil {
 			err = multierror.Append(err, resource.ErrInvalidListElement{
 				Name:  "ips",

@@ -24,7 +24,11 @@ var (
 	}
 
 	ServiceType = ServiceV1Alpha1Type
+	
+	ValidateService = resource.DecodeAndValidate[*pbcatalog.Service](validateService)
 )
+
+type DecodedService = resource.DecodedResource[*pbcatalog.Service]
 
 func RegisterService(r resource.Registry) {
 	r.Register(resource.Registration{
@@ -34,13 +38,7 @@ func RegisterService(r resource.Registry) {
 	})
 }
 
-func ValidateService(res *pbresource.Resource) error {
-	var service pbcatalog.Service
-
-	if err := res.Data.UnmarshalTo(&service); err != nil {
-		return resource.NewErrDataParse(&service, err)
-	}
-
+func validateService(dec *DecodedService) error {
 	var err error
 
 	// Validate the workload selector. We are allowing selectors with no
@@ -48,7 +46,7 @@ func ValidateService(res *pbresource.Resource) error {
 	// ServiceEndpoints objects for this service such as when desiring to
 	// configure endpoint information for external services that are not
 	// registered as workloads
-	if selErr := validateSelector(service.Workloads, true); selErr != nil {
+	if selErr := validateSelector(dec.Data.Workloads, true); selErr != nil {
 		err = multierror.Append(err, resource.ErrInvalidField{
 			Name:    "workloads",
 			Wrapped: selErr,
@@ -58,7 +56,7 @@ func ValidateService(res *pbresource.Resource) error {
 	usedVirtualPorts := make(map[uint32]int)
 
 	// Validate each port
-	for idx, port := range service.Ports {
+	for idx, port := range dec.Data.Ports {
 		if usedIdx, found := usedVirtualPorts[port.VirtualPort]; found {
 			err = multierror.Append(err, resource.ErrInvalidListElement{
 				Name:  "ports",
@@ -105,7 +103,7 @@ func ValidateService(res *pbresource.Resource) error {
 	}
 
 	// Validate that the Virtual IPs are all IP addresses
-	for idx, vip := range service.VirtualIps {
+	for idx, vip := range dec.Data.VirtualIps {
 		if vipErr := validateIPAddress(vip); vipErr != nil {
 			err = multierror.Append(err, resource.ErrInvalidListElement{
 				Name:    "virtual_ips",

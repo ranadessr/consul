@@ -24,7 +24,11 @@ var (
 	}
 
 	ServiceEndpointsType = ServiceEndpointsV1Alpha1Type
+
+	ValidateServiceEndpoints = resource.DecodeAndValidate[*pbcatalog.ServiceEndpoints](validateServiceEndpoints)
 )
+
+type DecodedServiceEndpoints = resource.DecodedResource[*pbcatalog.ServiceEndpoints]
 
 func RegisterServiceEndpoints(r resource.Registry) {
 	r.Register(resource.Registration{
@@ -47,41 +51,35 @@ func MutateServiceEndpoints(res *pbresource.Resource) error {
 	return nil
 }
 
-func ValidateServiceEndpoints(res *pbresource.Resource) error {
-	var svcEndpoints pbcatalog.ServiceEndpoints
-
-	if err := res.Data.UnmarshalTo(&svcEndpoints); err != nil {
-		return resource.NewErrDataParse(&svcEndpoints, err)
-	}
-
+func validateServiceEndpoints(dec *DecodedServiceEndpoints) error {
 	var err error
-	if !resource.EqualType(res.Owner.Type, ServiceV1Alpha1Type) {
+	if !resource.EqualType(dec.Owner.Type, ServiceV1Alpha1Type) {
 		err = multierror.Append(err, resource.ErrOwnerTypeInvalid{
 			ResourceType: ServiceEndpointsV1Alpha1Type,
-			OwnerType:    res.Owner.Type,
+			OwnerType:    dec.Owner.Type,
 		})
 	}
 
-	if !resource.EqualTenancy(res.Owner.Tenancy, res.Id.Tenancy) {
+	if !resource.EqualTenancy(dec.Owner.Tenancy, dec.Id.Tenancy) {
 		err = multierror.Append(err, resource.ErrOwnerTenantInvalid{
 			ResourceType:    ServiceEndpointsV1Alpha1Type,
-			ResourceTenancy: res.Id.Tenancy,
-			OwnerTenancy:    res.Owner.Tenancy,
+			ResourceTenancy: dec.Id.Tenancy,
+			OwnerTenancy:    dec.Owner.Tenancy,
 		})
 	}
 
-	if res.Owner.Name != res.Id.Name {
+	if dec.Owner.Name != dec.Id.Name {
 		err = multierror.Append(err, resource.ErrInvalidField{
 			Name: "name",
 			Wrapped: errInvalidEndpointsOwnerName{
-				Name:      res.Id.Name,
-				OwnerName: res.Owner.Name,
+				Name:      dec.Id.Name,
+				OwnerName: dec.Owner.Name,
 			},
 		})
 	}
 
-	for idx, endpoint := range svcEndpoints.Endpoints {
-		if endpointErr := validateEndpoint(endpoint, res); endpointErr != nil {
+	for idx, endpoint := range dec.Data.Endpoints {
+		if endpointErr := validateEndpoint(endpoint, dec.Resource); endpointErr != nil {
 			err = multierror.Append(err, resource.ErrInvalidListElement{
 				Name:    "endpoints",
 				Index:   idx,

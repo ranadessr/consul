@@ -22,7 +22,11 @@ var (
 	}
 
 	HealthChecksType = HealthChecksV1Alpha1Type
+	
+	ValidateHealthChecks = resource.DecodeAndValidate[*pbcatalog.HealthChecks](validateHealthChecks)
 )
+
+type DecodedHealthChecks = resource.DecodedResource[*pbcatalog.HealthChecks]
 
 func RegisterHealthChecks(r resource.Registry) {
 	r.Register(resource.Registration{
@@ -32,17 +36,11 @@ func RegisterHealthChecks(r resource.Registry) {
 	})
 }
 
-func ValidateHealthChecks(res *pbresource.Resource) error {
-	var checks pbcatalog.HealthChecks
-
-	if err := res.Data.UnmarshalTo(&checks); err != nil {
-		return resource.NewErrDataParse(&checks, err)
-	}
-
+func validateHealthChecks(dec *DecodedHealthChecks) error {
 	var err error
 
 	// Validate the workload selector
-	if selErr := validateSelector(checks.Workloads, false); selErr != nil {
+	if selErr := validateSelector(dec.Data.Workloads, false); selErr != nil {
 		err = multierror.Append(err, resource.ErrInvalidField{
 			Name:    "workloads",
 			Wrapped: selErr,
@@ -50,7 +48,7 @@ func ValidateHealthChecks(res *pbresource.Resource) error {
 	}
 
 	// Validate each check
-	for idx, check := range checks.HealthChecks {
+	for idx, check := range dec.Data.HealthChecks {
 		if checkErr := validateCheck(check); checkErr != nil {
 			err = multierror.Append(err, resource.ErrInvalidListElement{
 				Name:    "checks",

@@ -25,7 +25,11 @@ var (
 	}
 
 	WorkloadType = WorkloadV1Alpha1Type
+
+	ValidateWorkload = resource.DecodeAndValidate[*pbcatalog.Workload](validateWorkload)
 )
+
+type DecodedWorkload = resource.DecodedResource[*pbcatalog.Workload]
 
 func RegisterWorkload(r resource.Registry) {
 	r.Register(resource.Registration{
@@ -35,17 +39,11 @@ func RegisterWorkload(r resource.Registry) {
 	})
 }
 
-func ValidateWorkload(res *pbresource.Resource) error {
-	var workload pbcatalog.Workload
-
-	if err := res.Data.UnmarshalTo(&workload); err != nil {
-		return resource.NewErrDataParse(&workload, err)
-	}
-
+func validateWorkload(dec *DecodedWorkload) error {
 	var err error
 
 	// Validate that the workload has at least one port
-	if len(workload.Ports) < 1 {
+	if len(dec.Data.Ports) < 1 {
 		err = multierror.Append(err, resource.ErrInvalidField{
 			Name:    "ports",
 			Wrapped: resource.ErrEmpty,
@@ -55,7 +53,7 @@ func ValidateWorkload(res *pbresource.Resource) error {
 	var meshPorts []string
 
 	// Validate the Workload Ports
-	for portName, port := range workload.Ports {
+	for portName, port := range dec.Data.Ports {
 		if portNameErr := validatePortName(portName); portNameErr != nil {
 			err = multierror.Append(err, resource.ErrInvalidMapKey{
 				Map:     "ports",
@@ -95,12 +93,12 @@ func ValidateWorkload(res *pbresource.Resource) error {
 	// If the workload is mesh enabled then a valid identity must be provided.
 	// If not mesh enabled but a non-empty identity is provided then we still
 	// validate that its valid.
-	if len(meshPorts) > 0 && workload.Identity == "" {
+	if len(meshPorts) > 0 && dec.Data.Identity == "" {
 		err = multierror.Append(err, resource.ErrInvalidField{
 			Name:    "identity",
 			Wrapped: resource.ErrMissing,
 		})
-	} else if workload.Identity != "" && !isValidDNSLabel(workload.Identity) {
+	} else if dec.Data.Identity != "" && !isValidDNSLabel(dec.Data.Identity) {
 		err = multierror.Append(err, resource.ErrInvalidField{
 			Name:    "identity",
 			Wrapped: errNotDNSLabel,
@@ -108,7 +106,7 @@ func ValidateWorkload(res *pbresource.Resource) error {
 	}
 
 	// Validate workload locality
-	if workload.Locality != nil && workload.Locality.Region == "" && workload.Locality.Zone != "" {
+	if dec.Data.Locality != nil && dec.Data.Locality.Region == "" && dec.Data.Locality.Zone != "" {
 		err = multierror.Append(err, resource.ErrInvalidField{
 			Name:    "locality",
 			Wrapped: errLocalityZoneNoRegion,
@@ -117,8 +115,8 @@ func ValidateWorkload(res *pbresource.Resource) error {
 
 	// Node associations are optional but if present the name should
 	// be a valid DNS label.
-	if workload.NodeName != "" {
-		if !isValidDNSLabel(workload.NodeName) {
+	if dec.Data.NodeName != "" {
+		if !isValidDNSLabel(dec.Data.NodeName) {
 			err = multierror.Append(err, resource.ErrInvalidField{
 				Name:    "node_name",
 				Wrapped: errNotDNSLabel,
@@ -126,7 +124,7 @@ func ValidateWorkload(res *pbresource.Resource) error {
 		}
 	}
 
-	if len(workload.Addresses) < 1 {
+	if len(dec.Data.Addresses) < 1 {
 		err = multierror.Append(err, resource.ErrInvalidField{
 			Name:    "addresses",
 			Wrapped: resource.ErrEmpty,
@@ -134,8 +132,8 @@ func ValidateWorkload(res *pbresource.Resource) error {
 	}
 
 	// Validate Workload Addresses
-	for idx, addr := range workload.Addresses {
-		if addrErr := validateWorkloadAddress(addr, workload.Ports); addrErr != nil {
+	for idx, addr := range dec.Data.Addresses {
+		if addrErr := validateWorkloadAddress(addr, dec.Data.Ports); addrErr != nil {
 			err = multierror.Append(err, resource.ErrInvalidListElement{
 				Name:    "addresses",
 				Index:   idx,
