@@ -16,11 +16,10 @@ import (
 	"github.com/hashicorp/consul/internal/auth"
 	"github.com/hashicorp/consul/internal/catalog"
 	"github.com/hashicorp/consul/internal/controller"
-	"github.com/hashicorp/consul/internal/mesh/internal/cache/sidecarproxycache"
 	"github.com/hashicorp/consul/internal/mesh/internal/controllers/routes/routestest"
 	"github.com/hashicorp/consul/internal/mesh/internal/controllers/sidecarproxy/builder"
+	"github.com/hashicorp/consul/internal/mesh/internal/controllers/sidecarproxy/cache"
 	"github.com/hashicorp/consul/internal/mesh/internal/controllers/sidecarproxy/status"
-	"github.com/hashicorp/consul/internal/mesh/internal/mappers/sidecarproxymapper"
 	"github.com/hashicorp/consul/internal/mesh/internal/types"
 	"github.com/hashicorp/consul/internal/resource"
 	"github.com/hashicorp/consul/internal/resource/resourcetest"
@@ -45,7 +44,7 @@ type meshControllerTestSuite struct {
 
 	apiWorkloadID                  *pbresource.ID
 	apiWorkload                    *pbcatalog.Workload
-	computedTrafficPermissions     *pbresource.Resource
+	apiComputedTrafficPermissions  *pbresource.Resource
 	computedTrafficPermissionsData *pbauth.ComputedTrafficPermissions
 	apiService                     *pbresource.Resource
 	apiServiceData                 *pbcatalog.Service
@@ -69,9 +68,7 @@ func (suite *meshControllerTestSuite) SetupTest() {
 	suite.ctx = testutil.TestContext(suite.T())
 
 	suite.ctl = &reconciler{
-		destinationsCache: sidecarproxycache.NewDestinationsCache(),
-		proxyCfgCache:     sidecarproxycache.NewProxyConfigurationCache(),
-		identitiesCache:   sidecarproxycache.NewIdentitiesCache(),
+		cache: cache.New(),
 		getTrustDomain: func() (string, error) {
 			return "test.consul", nil
 		},
@@ -162,7 +159,7 @@ func (suite *meshControllerTestSuite) SetupTest() {
 		},
 	}
 
-	suite.computedTrafficPermissions = resourcetest.Resource(pbauth.ComputedTrafficPermissionsType, suite.apiWorkload.Identity).
+	suite.apiComputedTrafficPermissions = resourcetest.Resource(pbauth.ComputedTrafficPermissionsType, suite.apiWorkload.Identity).
 		WithData(suite.T(), suite.computedTrafficPermissionsData).
 		Write(suite.T(), resourceClient)
 
@@ -224,9 +221,11 @@ func (suite *meshControllerTestSuite) SetupTest() {
 	identityRef := &pbresource.Reference{
 		Name:    suite.apiWorkload.Identity,
 		Tenancy: suite.apiWorkloadID.Tenancy,
+		Type:    pbauth.WorkloadIdentityType,
 	}
 
-	suite.proxyStateTemplate = builder.New(suite.apiWorkloadID, identityRef, "test.consul", "dc1", false, nil).
+	suite.proxyStateTemplate = builder.New(resource.ReplaceType(pbmesh.ProxyStateTemplateType, suite.apiWorkloadID),
+		identityRef, "test.consul", "dc1", false, nil).
 		BuildLocalApp(suite.apiWorkload, suite.computedTrafficPermissionsData).
 		Build()
 }
@@ -348,16 +347,10 @@ func (suite *meshControllerTestSuite) TestController() {
 	mgr := controller.NewManager(suite.client, suite.runtime.Logger)
 
 	// Initialize controller dependencies.
-	var (
-		destinationsCache   = sidecarproxycache.NewDestinationsCache()
-		proxyCfgCache       = sidecarproxycache.NewProxyConfigurationCache()
-		computedRoutesCache = sidecarproxycache.NewComputedRoutesCache()
-		identitiesCache     = sidecarproxycache.NewIdentitiesCache()
-		m                   = sidecarproxymapper.New(destinationsCache, proxyCfgCache, computedRoutesCache, identitiesCache)
-	)
+	c := cache.New()
 	trustDomainFetcher := func() (string, error) { return "test.consul", nil }
 
-	mgr.Register(Controller(destinationsCache, proxyCfgCache, computedRoutesCache, identitiesCache, m, trustDomainFetcher, "dc1", false))
+	mgr.Register(Controller(c, trustDomainFetcher, "dc1", false))
 	mgr.SetRaftLeader(true)
 	go mgr.Run(suite.ctx)
 
@@ -369,9 +362,9 @@ func (suite *meshControllerTestSuite) TestController() {
 		apiComputedRoutesID = resource.ReplaceType(pbmesh.ComputedRoutesType, suite.apiService.Id)
 		dbComputedRoutesID  = resource.ReplaceType(pbmesh.ComputedRoutesType, suite.dbService.Id)
 
-		apiProxyStateTemplate *pbresource.Resource
-		webProxyStateTemplate *pbresource.Resource
-		webDestinations       *pbresource.Resource
+		apiProxyStateTemplate   *pbresource.Resource
+		webProxyStateTemplate   *pbresource.Resource
+		webComputedDestinations *pbresource.Resource
 	)
 
 	testutil.RunStep(suite.T(), "proxy state template generation", func(t *testing.T) {
@@ -390,9 +383,8 @@ func (suite *meshControllerTestSuite) TestController() {
 		)
 
 		// Add a source service and check that a new proxy state is generated.
-		webDestinations = resourcetest.Resource(pbmesh.DestinationsType, "web-destinations").
-			WithData(suite.T(), &pbmesh.Destinations{
-				Workloads: &pbcatalog.WorkloadSelector{Names: []string{"web-def"}},
+		webComputedDestinations = resourcetest.Resource(pbmesh.ComputedDestinationsType, suite.webWorkload.Id.Name).
+			WithData(suite.T(), &pbmesh.ComputedDestinations{
 				Destinations: []*pbmesh.Destination{
 					{
 						DestinationRef:  resource.Reference(suite.apiService.Id, ""),
@@ -468,7 +460,7 @@ func (suite *meshControllerTestSuite) TestController() {
 
 		// Check status on the pbmesh.Destinations resource.
 		serviceRef := resource.ReferenceToString(resource.Reference(suite.apiService.Id, ""))
-		suite.client.WaitForStatusCondition(t, webDestinations.Id, ControllerName,
+		suite.client.WaitForStatusCondition(t, webComputedDestinations.Id, ControllerName,
 			status.ConditionMeshProtocolNotFound(serviceRef))
 
 		// We should get a new web proxy template resource because this destination should be removed.
@@ -499,9 +491,8 @@ func (suite *meshControllerTestSuite) TestController() {
 			resourcetest.MustDecode[*pbcatalog.Service](t, suite.apiService),
 		)
 
-		serviceRef := resource.ReferenceToString(resource.Reference(suite.apiService.Id, ""))
-		suite.client.WaitForStatusCondition(t, webDestinations.Id, ControllerName,
-			status.ConditionMeshProtocolFound(serviceRef))
+		suite.client.WaitForStatusCondition(t, webComputedDestinations.Id, ControllerName,
+			status.ConditionAllDestinationsValid())
 
 		// We should also get a new web proxy template resource as this destination should be added again.
 		webProxyStateTemplate = suite.client.WaitForNewVersion(t, webProxyStateTemplateID, webProxyStateTemplate.Version)
@@ -522,10 +513,10 @@ func (suite *meshControllerTestSuite) TestController() {
 	testutil.RunStep(suite.T(), "add implicit upstream and enable tproxy", func(t *testing.T) {
 		// Delete explicit destinations resource.
 		suite.runtime.Logger.Trace("deleting web destinations")
-		_, err := suite.client.Delete(suite.ctx, &pbresource.DeleteRequest{Id: webDestinations.Id})
+		_, err := suite.client.Delete(suite.ctx, &pbresource.DeleteRequest{Id: webComputedDestinations.Id})
 		require.NoError(t, err)
 
-		webProxyStateTemplate = suite.client.WaitForNewVersion(suite.T(), webProxyStateTemplateID, webProxyStateTemplate.Version)
+		webProxyStateTemplate = suite.client.WaitForNewVersion(t, webProxyStateTemplateID, webProxyStateTemplate.Version)
 
 		// Write a default ComputedRoutes for db, so it's eligible.
 		dbCR := routestest.ReconcileComputedRoutes(suite.T(), suite.client, dbComputedRoutesID,
@@ -534,11 +525,8 @@ func (suite *meshControllerTestSuite) TestController() {
 		require.NotNil(t, dbCR)
 
 		// Enable transparent proxy for the web proxy.
-		resourcetest.Resource(pbmesh.ProxyConfigurationType, "proxy-config").
-			WithData(t, &pbmesh.ProxyConfiguration{
-				Workloads: &pbcatalog.WorkloadSelector{
-					Prefixes: []string{"web"},
-				},
+		resourcetest.Resource(pbmesh.ComputedProxyConfigurationType, suite.webWorkload.Id.Name).
+			WithData(t, &pbmesh.ComputedProxyConfiguration{
 				DynamicConfig: &pbmesh.DynamicConfig{
 					Mode: pbmesh.ProxyMode_PROXY_MODE_TRANSPARENT,
 					TransparentProxy: &pbmesh.TransparentProxy{
@@ -559,9 +547,9 @@ func (suite *meshControllerTestSuite) TestController() {
 		require.False(t, dec.Data.ProxyState.TrafficPermissionDefaultAllow)
 
 		suite.runtime.Logger.Trace("deleting computed traffic permissions")
-		_, err := suite.client.Delete(suite.ctx, &pbresource.DeleteRequest{Id: suite.computedTrafficPermissions.Id})
+		_, err := suite.client.Delete(suite.ctx, &pbresource.DeleteRequest{Id: suite.apiComputedTrafficPermissions.Id})
 		require.NoError(t, err)
-		suite.client.WaitForDeletion(t, suite.computedTrafficPermissions.Id)
+		suite.client.WaitForDeletion(t, suite.apiComputedTrafficPermissions.Id)
 
 		apiProxyStateTemplate = suite.client.WaitForNewVersion(t, apiProxyStateTemplateID, apiProxyStateTemplate.Version)
 
@@ -631,16 +619,10 @@ func (suite *meshControllerTestSuite) TestControllerDefaultAllow() {
 	mgr := controller.NewManager(suite.client, suite.runtime.Logger)
 
 	// Initialize controller dependencies.
-	var (
-		destinationsCache   = sidecarproxycache.NewDestinationsCache()
-		proxyCfgCache       = sidecarproxycache.NewProxyConfigurationCache()
-		computedRoutesCache = sidecarproxycache.NewComputedRoutesCache()
-		identitiesCache     = sidecarproxycache.NewIdentitiesCache()
-		m                   = sidecarproxymapper.New(destinationsCache, proxyCfgCache, computedRoutesCache, identitiesCache)
-	)
+	c := cache.New()
 	trustDomainFetcher := func() (string, error) { return "test.consul", nil }
 
-	mgr.Register(Controller(destinationsCache, proxyCfgCache, computedRoutesCache, identitiesCache, m, trustDomainFetcher, "dc1", true))
+	mgr.Register(Controller(c, trustDomainFetcher, "dc1", true))
 	mgr.SetRaftLeader(true)
 	go mgr.Run(suite.ctx)
 

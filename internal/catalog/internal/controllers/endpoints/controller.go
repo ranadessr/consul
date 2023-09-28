@@ -105,12 +105,12 @@ func (r *serviceEndpointsReconciler) Reconcile(ctx context.Context, rt controlle
 		return err
 	}
 
-	var status *pbresource.Condition
+	var statusConditions []*pbresource.Condition
 
 	if serviceUnderManagement(serviceData.service) {
 		rt.Logger.Trace("service is enabled for automatic endpoint management")
 		// This service should have its endpoints automatically managed
-		status = ConditionManaged
+		statusConditions = append(statusConditions, ConditionManaged)
 
 		// Inform the WorkloadMapper to track this service and its selectors. So
 		// future workload updates that would be matched by the services selectors
@@ -129,9 +129,18 @@ func (r *serviceEndpointsReconciler) Reconcile(ctx context.Context, rt controlle
 			rt.Logger.Trace("error retrieving selected workloads", "error", err)
 			return err
 		}
+		if workloadData != nil {
+			rt.Logger.Trace("found workload")
+		}
 
 		// Calculate the latest endpoints from the already gathered workloads
 		latestEndpoints := workloadsToEndpoints(serviceData.service, workloadData)
+
+		// Add status
+		if endpointsData != nil {
+			statusConditions = append(statusConditions,
+				workloadIdentityStatusFromEndpoints(latestEndpoints))
+		}
 
 		// Before writing the endpoints actually check to see if they are changed
 		if endpointsData == nil || !proto.Equal(endpointsData.endpoints, latestEndpoints) {
@@ -168,7 +177,7 @@ func (r *serviceEndpointsReconciler) Reconcile(ctx context.Context, rt controlle
 	} else {
 		rt.Logger.Trace("endpoints are not being automatically managed")
 		// This service is not having its endpoints automatically managed
-		status = ConditionUnmanaged
+		statusConditions = append(statusConditions, ConditionUnmanaged)
 
 		// Inform the WorkloadMapper that it no longer needs to track this service
 		// as it is no longer under endpoint management
@@ -203,15 +212,14 @@ func (r *serviceEndpointsReconciler) Reconcile(ctx context.Context, rt controlle
 	// for that object existing or not.
 	newStatus := &pbresource.Status{
 		ObservedGeneration: serviceData.resource.Generation,
-		Conditions: []*pbresource.Condition{
-			status,
-		},
+		Conditions:         statusConditions,
 	}
 	// If the status is unchanged then we should return and avoid the unnecessary write
 	if resource.EqualStatus(serviceData.resource.Status[StatusKey], newStatus, false) {
 		return nil
 	}
 
+	rt.Logger.Trace("writing status", "status", newStatus)
 	_, err = rt.Client.WriteStatus(ctx, &pbresource.WriteStatusRequest{
 		Id:     serviceData.resource.Id,
 		Key:    StatusKey,
@@ -387,4 +395,29 @@ func workloadToEndpoint(svc *pbcatalog.Service, data *workloadData) *pbcatalog.E
 		Ports:        endpointPorts,
 		Identity:     data.workload.Identity,
 	}
+}
+
+func workloadIdentityStatusFromEndpoints(endpoints *pbcatalog.ServiceEndpoints) *pbresource.Condition {
+	gatherIdentities := func(endpoints *pbcatalog.ServiceEndpoints) []string {
+		if endpoints == nil {
+			return nil
+		}
+
+		var identities []string
+		for _, ep := range endpoints.GetEndpoints() {
+			identities = append(identities, ep.GetIdentity())
+		}
+
+		sort.Strings(identities)
+
+		return identities
+	}
+
+	identities := gatherIdentities(endpoints)
+
+	if len(identities) > 0 {
+		return ConditionIdentitiesFound(identities)
+	}
+
+	return ConditionIdentitiesNotFound
 }

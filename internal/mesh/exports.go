@@ -18,7 +18,7 @@ var (
 
 	// Sidecar-proxy controller.
 	SidecarProxyStatusKey                                  = sidecarproxy.ControllerName
-	SidecarProxyStatusConditionMeshDestination             = status.StatusConditionDestinationAccepted
+	SidecarProxyStatusConditionMeshDestination             = status.StatusConditionDestinationsAccepted
 	SidecarProxyStatusReasonNonMeshDestination             = status.StatusReasonMeshProtocolNotFound
 	SidecarProxyStatusReasonMeshDestination                = status.StatusReasonMeshProtocolFound
 	SidecarProxyStatusReasonDestinationServiceNotFound     = status.StatusReasonDestinationServiceNotFound
