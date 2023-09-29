@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 
 	"github.com/mitchellh/cli"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -32,6 +33,8 @@ type cmd struct {
 	help  string
 
 	filePath string
+
+	testStdin   io.Reader
 }
 
 func (c *cmd) init() {
@@ -74,17 +77,26 @@ func (c *cmd) Run(args []string) int {
 		}
 	}
 
+	fmt.Printf("\n**** flag args: %v", c.flags.Args())
+
+	fmt.Printf("\n**** args: %v", args)
+
+	fmt.Printf("\n**** filepath: %s", c.filePath)
+
+	fmt.Printf("\n**** stdin: %v", c.testStdin)
+
 	var parsedResource *pbresource.Resource
 
-	if c.filePath != "" {
-		data, err := resource.ParseResourceFromFile(c.filePath)
+	if (c.filePath != "" || len(c.flags.Args()) > 0) {
+		data, err := resource.ParseResourceFromFile2(c.flags.Args()[0], c.testStdin)
+		fmt.Printf("\n***** data read: %+v", data)
 		if err != nil {
 			c.UI.Error(fmt.Sprintf("Failed to decode resource from input file: %v", err))
 			return 1
 		}
 		parsedResource = data
 	} else {
-		c.UI.Error("Incorrect argument format: Flag -f with file path argument is required")
+		c.UI.Error("Incorrect argument format: Must provide one argument to write the resource. Flag -f can be used to pass the file path or - to for stdin")
 		return 1
 	}
 

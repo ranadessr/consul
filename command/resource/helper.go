@@ -8,10 +8,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/types/known/anypb"
+	"io"
 	"net/http"
 	"strings"
+
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/hashicorp/consul/agent/consul"
 	"github.com/hashicorp/consul/command/helpers"
@@ -91,6 +93,25 @@ func parseJson(js string) (*pbresource.Resource, error) {
 
 func ParseResourceFromFile(filePath string) (*pbresource.Resource, error) {
 	data, err := helpers.LoadDataSourceNoRaw(filePath, nil)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to load data: %v", err)
+	}
+	var parsedResource *pbresource.Resource
+	parsedResource, err = resourcehcl.Unmarshal([]byte(data), consul.NewTypeRegistry())
+	if err != nil {
+		parsedResource, err = parseJson(data)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to decode resource from input file: %v", err)
+		}
+	}
+
+	return parsedResource, nil
+}
+
+func ParseResourceFromFile2(filePath string, stdin io.Reader) (*pbresource.Resource, error) {
+	data, err := helpers.LoadDataSourceNoRaw(filePath, stdin)
+	fmt.Printf("\n**** read data: %+v", data)
+
 	if err != nil {
 		return nil, fmt.Errorf("Failed to load data: %v", err)
 	}
