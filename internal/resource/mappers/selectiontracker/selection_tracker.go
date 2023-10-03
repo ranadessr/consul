@@ -114,6 +114,14 @@ func (t *WorkloadSelectionTracker) UntrackID(id *pbresource.ID) {
 	t.untrackID(id)
 }
 
+// GetSelector returns the currently stored selector for the given name.
+func (t *WorkloadSelectionTracker) GetSelector(name string) *pbcatalog.WorkloadSelector {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	return t.workloadSelectors[name]
+}
+
 // untrackID should be called to stop tracking a resource ID.
 // This method assumes the lock is already held. Besides modifying
 // the prefix & name trees to not reference this ID, it will also
