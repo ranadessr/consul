@@ -43,7 +43,7 @@ func (m *Mapper) MapProxyConfiguration(ctx context.Context, rt controller.Runtim
 	}
 
 	// Then generate requests for any previously selected workloads.
-	prevSelector := m.workloadSelectionTracker.GetSelector(res.GetId().GetName())
+	prevSelector := m.workloadSelectionTracker.GetSelector(res.GetId())
 
 	if !(stringslice.Equal(prevSelector.GetNames(), proxyConfig.GetWorkloads().GetNames()) &&
 		stringslice.Equal(prevSelector.GetPrefixes(), proxyConfig.GetWorkloads().GetPrefixes())) {
