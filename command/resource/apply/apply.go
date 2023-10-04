@@ -77,18 +77,16 @@ func (c *cmd) Run(args []string) int {
 		}
 	}
 
+	input := c.filePath
+
+	if (input == "" && len(c.flags.Args()) > 0 && c.flags.Arg(0) == "-") {
+		input = c.flags.Arg(0)
+	}
+
 	var parsedResource *pbresource.Resource
 
-	if (c.filePath != ""){
-		data, err := resource.ParseResourceFromFile2(c.filePath, nil)
-		if err != nil {
-			c.UI.Error(fmt.Sprintf("Failed to decode resource from input file: %v", err))
-			return 1
-		}
-		parsedResource = data
-	} else if (len(c.flags.Args()) > 0 && c.flags.Arg(0) == "-"){
-		data, err := resource.ParseResourceFromFile2(c.flags.Arg(0), c.testStdin)
-		fmt.Printf("\n***** stdin data read: %+v", data)
+	if (input != ""){
+		data, err := resource.ParseResourceFromFile2(input, nil)
 		if err != nil {
 			c.UI.Error(fmt.Sprintf("Failed to decode resource from input file: %v", err))
 			return 1

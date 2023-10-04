@@ -79,7 +79,7 @@ func TestResourceApplyInvalidArgs(t *testing.T) {
 		"missing required flag": {
 			args:         []string{},
 			expectedCode: 1,
-			expectedErr:  errors.New("Incorrect argument format: Flag -f with file path argument is required"),
+			expectedErr:  errors.New("Incorrect argument format: Must provide one argument to write the resource. Flag -f can be used to pass the file path or - to for stdin"),
 		},
 		"file parsing failure": {
 			args:         []string{"-f=../testdata/invalid.hcl"},
