@@ -110,7 +110,6 @@ func ParseResourceFromFile(filePath string) (*pbresource.Resource, error) {
 
 func ParseResourceFromFile2(filePath string, stdin io.Reader) (*pbresource.Resource, error) {
 	data, err := helpers.LoadDataSourceNoRaw(filePath, stdin)
-	fmt.Printf("\n**** read data: %+v", data)
 
 	if err != nil {
 		return nil, fmt.Errorf("Failed to load data: %v", err)
