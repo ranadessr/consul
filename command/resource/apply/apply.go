@@ -34,7 +34,7 @@ type cmd struct {
 
 	filePath string
 
-	testStdin   io.Reader
+	testStdin io.Reader
 }
 
 func (c *cmd) init() {
@@ -79,14 +79,14 @@ func (c *cmd) Run(args []string) int {
 
 	input := c.filePath
 
-	if (input == "" && len(c.flags.Args()) > 0 && c.flags.Arg(0) == "-") {
+	if input == "" && len(c.flags.Args()) > 0 && c.flags.Arg(0) == "-" {
 		input = c.flags.Arg(0)
 	}
 
 	var parsedResource *pbresource.Resource
 
-	if (input != ""){
-		data, err := resource.ParseResourceFromFile2(input, nil)
+	if input != "" {
+		data, err := resource.ParseResourceInput(input, c.testStdin)
 		if err != nil {
 			c.UI.Error(fmt.Sprintf("Failed to decode resource from input file: %v", err))
 			return 1

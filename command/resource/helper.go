@@ -108,7 +108,7 @@ func ParseResourceFromFile(filePath string) (*pbresource.Resource, error) {
 	return parsedResource, nil
 }
 
-func ParseResourceFromFile2(filePath string, stdin io.Reader) (*pbresource.Resource, error) {
+func ParseResourceInput(filePath string, stdin io.Reader) (*pbresource.Resource, error) {
 	data, err := helpers.LoadDataSourceNoRaw(filePath, stdin)
 
 	if err != nil {
