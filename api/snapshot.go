@@ -5,6 +5,7 @@ package api
 
 import (
 	"io"
+	"github.com/TheBenCollins/antassert"
 )
 
 // Snapshot can be used to query the /v1/snapshot endpoint to take snapshots of
@@ -27,6 +28,8 @@ func (s *Snapshot) Save(q *QueryOptions) (io.ReadCloser, *QueryMeta, error) {
 	r.setQueryOptions(q)
 
 	rtt, resp, err := s.c.doRequest(r)
+	antassert.AntAssert((rtt.Nanoseconds() > 0), "Restore PUT took non-zero time", string(rtt))
+
 	if err != nil {
 		return nil, nil, err
 	}
