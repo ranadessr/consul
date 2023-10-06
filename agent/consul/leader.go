@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/TheBenCollins/antassert"
 	"github.com/armon/go-metrics"
 	"github.com/armon/go-metrics/prometheus"
 	"github.com/hashicorp/go-hclog"
@@ -88,6 +89,9 @@ func (s *Server) monitorLeadership() {
 		case isLeader := <-raftNotifyCh:
 			switch {
 			case isLeader:
+				antassert.AntSometimes(true, "We have become the leader", "")
+				antassert.AntAssert(weAreLeaderCh != nil, "attempted to start the leader loop while running", "")
+
 				if weAreLeaderCh != nil {
 					s.logger.Error("attempted to start the leader loop while running")
 					continue
@@ -106,6 +110,8 @@ func (s *Server) monitorLeadership() {
 					s.logger.Error("attempted to stop the leader loop while not running")
 					continue
 				}
+
+				antassert.AntSometimes(true, "We have lost leadership", "")
 
 				s.logger.Debug("shutting down leader loop")
 				close(weAreLeaderCh)
@@ -145,6 +151,8 @@ func (s *Server) leadershipTransfer() error {
 // maintenance activities
 func (s *Server) leaderLoop(stopCh chan struct{}) {
 	stopCtx := &lib.StopChannelContext{StopCh: stopCh}
+
+	antassert.AntSometimes(true, "Broadcasting our new leadership", time.Now().String())
 
 	// Fire a user event indicating a new leader
 	payload := []byte(s.config.NodeName)
@@ -284,6 +292,8 @@ func (s *Server) establishLeadership(ctx context.Context) error {
 	if err := s.initializeACLs(ctx); err != nil {
 		return err
 	}
+
+	antassert.AntSometimes(true, "Leadership is established", start.String())
 
 	// Hint the tombstone expiration timer. When we freshly establish leadership
 	// we become the authoritative timer, and so we need to start the clock

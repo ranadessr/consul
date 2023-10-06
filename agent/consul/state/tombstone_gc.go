@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/TheBenCollins/antassert"
 )
 
 // TombstoneGC is used to track creation of tombstones so that they can be
@@ -82,6 +84,8 @@ func (t *TombstoneGC) SetEnabled(enabled bool) {
 	if enabled == t.enabled {
 		return
 	}
+
+	antassert.AntSometimes(true, "TombstoneGC is enabled", "This should only happen on the leader node")
 
 	// Stop all the timers and clear
 	if !enabled {
