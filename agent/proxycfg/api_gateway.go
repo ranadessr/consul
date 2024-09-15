@@ -113,6 +113,7 @@ func (h *handlerAPIGateway) handleUpdate(ctx context.Context, u UpdateEvent, sna
 		if err := h.handleGatewayConfigUpdate(ctx, u, snap); err != nil {
 			return err
 		}
+		antassert.AntAssert(snap.APIGateway.BoundGatewayConfig != nil, "BoundGatewayConfig should not be nil after handleGatewayConfigUpdate", "")
 	case u.CorrelationID == inlineCertificateConfigWatchID:
 		// Handle change in an attached inline-certificate config entry
 		if err := h.handleInlineCertConfigUpdate(ctx, u, snap); err != nil {
@@ -129,7 +130,11 @@ func (h *handlerAPIGateway) handleUpdate(ctx context.Context, u UpdateEvent, sna
 		}
 	}
 
-	return h.recompileDiscoveryChains(snap)
+	if err := h.recompileDiscoveryChains(snap); err != nil {
+		return err
+	}
+	antassert.AntAssert(len(snap.APIGateway.DiscoveryChain) > 0, "DiscoveryChain should not be empty after recompilation", "")
+	return nil
 }
 
 // handleRootCAUpdate responds to changes in the watched root CA for a gateway
